@@ -16,6 +16,7 @@ config:
                     protocol: -1
               host: '127.0.0.1.sslip.io'
               proxyProtocol: true
+              region: Moldova
               cachePingTTL: -1s
   forceKeyAuthentication: false
 
@@ -23,3 +24,8 @@ autotransfer:
   enabled: true
   transfer: false
   delay: 0s
+
+geosteer:
+  enabled: true
+  dbPath: GeoLite2-Country.mmdb
+  strict: false

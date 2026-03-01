@@ -20,6 +20,7 @@ import (
 	mcnet "github.com/Tnze/go-mc/net"
 	pk "github.com/Tnze/go-mc/net/packet"
 	"github.com/go-logr/logr"
+	"github.com/minekube/gate-plugin-template/plugins/geosteer"
 	"github.com/pires/go-proxyproto"
 	"github.com/robinbraemer/event"
 	"go.minekube.com/gate/pkg/edition/java/forge/modinfo"
@@ -272,9 +273,9 @@ func (r *TargetResolver) ResolveForInbound(in proxy.Inbound) (proxy.RegisteredSe
 // ResolveTargetForInbound resolves target details for a specific inbound connection.
 func (r *TargetResolver) ResolveTargetForInbound(in proxy.Inbound) (ResolvedTarget, error) {
 	if in == nil {
-		return r.resolveTargetForVirtualHost("", gateproto.Protocol(0))
+		return r.resolveTargetForVirtualHost("", gateproto.Protocol(0), nil)
 	}
-	return r.resolveTargetForVirtualHost(normalizeVirtualHost(in.VirtualHost()), in.Protocol())
+	return r.resolveTargetForVirtualHost(normalizeVirtualHost(in.VirtualHost()), in.Protocol(), in)
 }
 
 // ResolveForVirtualHost resolves the target for a specific virtual host.
@@ -288,10 +289,10 @@ func (r *TargetResolver) ResolveForVirtualHost(virtualHost string) (proxy.Regist
 
 // ResolveTargetForVirtualHost resolves target details for a specific virtual host.
 func (r *TargetResolver) ResolveTargetForVirtualHost(virtualHost string) (ResolvedTarget, error) {
-	return r.resolveTargetForVirtualHost(virtualHost, gateproto.Protocol(0))
+	return r.resolveTargetForVirtualHost(virtualHost, gateproto.Protocol(0), nil)
 }
 
-func (r *TargetResolver) resolveTargetForVirtualHost(virtualHost string, protocolVersion gateproto.Protocol) (ResolvedTarget, error) {
+func (r *TargetResolver) resolveTargetForVirtualHost(virtualHost string, protocolVersion gateproto.Protocol, inbound proxy.Inbound) (ResolvedTarget, error) {
 	canUseTransfer := protocolVersion.GreaterEqual(version.Minecraft_1_20_5)
 
 	if r.explicitTargetAddress != "" {
@@ -325,7 +326,7 @@ func (r *TargetResolver) resolveTargetForVirtualHost(virtualHost string, protoco
 	}
 
 	if len(r.proxy.Config().Lite.Routes) > 0 {
-		target, err := r.resolveFromLite(virtualHost, canUseTransfer)
+		target, err := r.resolveFromLite(virtualHost, canUseTransfer, inbound)
 		if err == nil {
 			setTargetAddress(target.Address)
 			return target, nil
@@ -342,7 +343,7 @@ func (r *TargetResolver) resolveTargetForVirtualHost(virtualHost string, protoco
 	return ResolvedTarget{}, ErrNoAddressConfigured
 }
 
-func (r *TargetResolver) resolveFromLite(virtualHost string, canUseTransfer bool) (ResolvedTarget, error) {
+func (r *TargetResolver) resolveFromLite(virtualHost string, canUseTransfer bool, inbound proxy.Inbound) (ResolvedTarget, error) {
 	routes := r.proxy.Config().Lite.Routes
 	if len(routes) == 0 {
 		return ResolvedTarget{}, errors.New("lite mode has no routes")
@@ -354,13 +355,26 @@ func (r *TargetResolver) resolveFromLite(virtualHost string, canUseTransfer bool
 	}
 
 	routeHost, route, groups := gatelite.FindRouteWithGroups(host, routes...)
+	routeIndex := -1
+	if geoMatch, ok := geosteer.MatchLiteRouteForInbound(inbound, routes); ok {
+		routeHost = geoMatch.RouteHost
+		route = geoMatch.Route
+		groups = geoMatch.Groups
+		routeIndex = geoMatch.Index
+		r.log.V(1).Info("geosteer matched lite route",
+			"virtualHost", host,
+			"countryCode", geoMatch.CountryCode,
+			"countryName", geoMatch.CountryName,
+			"routeIndex", geoMatch.Index,
+			"routeHost", routeHost,
+		)
+	}
 	if route == nil {
 		return ResolvedTarget{}, fmt.Errorf("no lite route matched virtual host %q", host)
 	}
 	if len(route.Backend) == 0 {
 		return ResolvedTarget{}, fmt.Errorf("matched lite route %q has no backend", routeHost)
 	}
-	routeIndex := findLiteRouteIndexByHost(routes, routeHost)
 	if routeIndex < 0 {
 		routeIndex = findLiteRouteIndex(routes, route)
 	}

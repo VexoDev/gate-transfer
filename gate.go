@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/minekube/gate-plugin-template/plugins/autotransfer"
+	"github.com/minekube/gate-plugin-template/plugins/geosteer"
 
 	"go.minekube.com/gate/cmd/gate"
 	"go.minekube.com/gate/pkg/edition/java/proxy"
@@ -20,6 +21,7 @@ func main() {
 		//globalchat.Plugin,
 		//bossbar.Plugin,
 		//titlecmd.Plugin,
+		geosteer.Plugin,
 		autotransfer.Plugin,
 
 		// Add more plugins as you like.
